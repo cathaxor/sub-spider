@@ -11,33 +11,36 @@ import warnings
 from colorama import Fore, Style, init
 import requests
 import os
+from urllib.parse import urlparse, urlencode
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Suppress XMLParsedAsHTMLWarning
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
-
 init(autoreset=True)
 
 TIMEOUT = 5
-CONCURRENT_REQUESTS = 150
-HEADERS = {'User-Agent': 'CatHaxor-SubdomainFinder/1.2'}
+CONCURRENT_REQUESTS = 300
+HEADERS = {'User-Agent': 'CatHaxor-Tool/1.2'}
 sem_http = asyncio.Semaphore(CONCURRENT_REQUESTS)
 sem_dns = asyncio.Semaphore(CONCURRENT_REQUESTS)
-OUTPUT_FILE = "found.txt"
+
+OUTPUT_SUB_FILE = "found.txt"
+OUTPUT_PARAM_FILE = "params_found.txt"
 found_subdomains = []
 
-SEC_LISTS_URL = "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt"
+SEC_SUBDOMAIN_LIST_URL = "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt"
+SEC_PARAM_LIST_URL = "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/burp-parameter-names.txt"
 
-# *** UPDATE SETTINGS ***
 SCRIPT_URL = "https://raw.githubusercontent.com/cathaxor/sub-spider/main/sub-spider.py"
-SCRIPT_LOCAL = os.path.abspath(__file__)  # Current script path
+SCRIPT_LOCAL = os.path.abspath(__file__)
 
 def print_banner():
-    banner = f"""{Fore.CYAN}
+    banner = f"""
+{Style.BRIGHT + Fore.CYAN}
 ░█▀▀█ ─█▀▀█ ▀▀█▀▀ ░█─░█ ─█▀▀█ ▀▄░▄▀ ░█▀▀▀█ ░█▀▀█
 ░█─── ░█▄▄█ ─░█── ░█▀▀█ ░█▄▄█ ─░█── ░█──░█ ░█▄▄▀
 ░█▄▄█ ░█─░█ ─░█── ░█─░█ ░█─░█ ▄▀░▀▄ ░█▄▄▄█ ░█─░█
 {Style.RESET_ALL}
-🔍 CatHaxor Subdomain Finder | Created by: Cathaxor
+{Style.BRIGHT + Fore.CYAN}🔍 CatHaxor Subdomain & Parameter Finder | Created by: Cathaxor{Style.RESET_ALL}
 """
     print(banner)
 
@@ -53,129 +56,127 @@ async def dns_resolves(resolver, host):
         async with sem_dns:
             await resolver.gethostbyname(host, family=aiodns.socket.AF_INET)
             return True
-    except aiodns.error.DNSError:
+    except:
         return False
 
 async def fetch(session, url):
     try:
         async with sem_http:
             async with session.get(url, timeout=ClientTimeout(total=TIMEOUT), allow_redirects=True) as resp:
-                raw_bytes = await resp.read()
-                encoding = resp.charset or 'utf-8'
-                try:
-                    text = raw_bytes.decode(encoding)
-                except UnicodeDecodeError:
-                    text = raw_bytes.decode('latin-1', errors='ignore')
-
-                title = get_title(text)
-
                 if resp.status < 400:
                     found_subdomains.append(url)
-                    print(f"{Fore.GREEN}[{resp.status}] {url} - {title}")
-                else:
-                    print(f"{Fore.YELLOW}[{resp.status}] {url} - {title}")
-    except Exception as e:
-        print(f"{Fore.RED}[-] Failed: {url} - {e}")
+                    print(f"{Fore.GREEN}{url}")
+    except:
+        pass
 
 async def download_wordlist(url):
     async with aiohttp.ClientSession(headers=HEADERS) as session:
-        try:
-            async with session.get(url, timeout=ClientTimeout(total=TIMEOUT)) as resp:
-                if resp.status == 200:
-                    text = await resp.text()
-                    return [line.strip() for line in text.splitlines() if line.strip()]
-                else:
-                    print(f"{Fore.RED}[!] Failed to download wordlist from {url} (Status: {resp.status})")
-                    return []
-        except Exception as e:
-            print(f"{Fore.RED}[!] Exception while downloading wordlist: {e}")
+        async with session.get(url) as resp:
+            if resp.status == 200:
+                text = await resp.text()
+                return [line.strip() for line in text.splitlines() if line.strip()]
             return []
 
-async def run(domains_file):
-    urls = []
-
-    # Read base domains from file
-    with open(domains_file, 'r') as f:
-        base_domains = [line.strip() for line in f if line.strip()]
-
-    # Download subdomain prefixes from SecLists
-    print(f"{Fore.CYAN}[i] Downloading subdomain wordlist from SecLists...")
-    sub_prefixes = await download_wordlist(SEC_LISTS_URL)
-    if not sub_prefixes:
-        print(f"{Fore.RED}[!] Could not get subdomain wordlist. Exiting.")
+async def run_subdomain_scan():
+    domains_input = input(f"{Style.BRIGHT + Fore.CYAN}Enter domain(s) (comma separated): {Style.RESET_ALL}").strip()
+    if not domains_input:
         return
+    base_domains = [d.strip() for d in domains_input.split(",") if d.strip()]
+    sub_prefixes = await download_wordlist(SEC_SUBDOMAIN_LIST_URL)
 
-    # Generate full subdomains
-    subdomains = []
-    for domain in base_domains:
-        for prefix in sub_prefixes:
-            subdomains.append(f"{prefix}.{domain}")
-
-    print(f"{Fore.CYAN}[i] Checking DNS resolution of {len(subdomains)} subdomains...")
+    subdomains = [f"{prefix}.{domain}" for domain in base_domains for prefix in sub_prefixes]
 
     resolver = aiodns.DNSResolver()
-    resolved_subdomains = []
+    resolved = []
 
-    async def check_dns(sub):
+    async def check(sub):
         if await dns_resolves(resolver, sub):
-            resolved_subdomains.append(sub)
+            resolved.append(sub)
 
-    dns_tasks = [check_dns(sub) for sub in subdomains]
-    await asyncio.gather(*dns_tasks)
+    await asyncio.gather(*[check(s) for s in subdomains])
 
-    print(f"{Fore.CYAN}[i] {len(resolved_subdomains)} subdomains resolved. Starting HTTP checks...")
-
-    # Build urls list for HTTP/HTTPS
-    for sub in resolved_subdomains:
-        urls.append(f"http://{sub}")
-        urls.append(f"https://{sub}")
+    urls = [f"http://{s}" for s in resolved] + [f"https://{s}" for s in resolved]
 
     async with aiohttp.ClientSession(headers=HEADERS) as session:
-        tasks = [fetch(session, url) for url in urls]
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*[fetch(session, u) for u in urls])
 
     if found_subdomains:
-        with open(OUTPUT_FILE, 'w') as f:
+        with open(OUTPUT_SUB_FILE, 'w') as f:
             for sub in found_subdomains:
                 f.write(sub + '\n')
-        print(f"\n{Fore.CYAN}[✓] Saved live subdomains to {OUTPUT_FILE}\n")
-    else:
-        print(f"\n{Fore.RED}[!] No live subdomains found.\n")
+
+def run_param_finder():
+    base_url = input(f"{Style.BRIGHT + Fore.CYAN}Enter base URL (e.g. https://site.com/page.php): {Style.RESET_ALL}").strip()
+    if not base_url:
+        return
+
+    parsed = urlparse(base_url)
+    if not parsed.scheme or not parsed.netloc:
+        print(f"{Fore.RED}Invalid URL format.")
+        return
+
+    param_list = requests.get(SEC_PARAM_LIST_URL).text.splitlines()
+    valid_urls = []
+
+    def test_param(param):
+        try:
+            full_url = base_url + ("&" if "?" in base_url else "?") + urlencode({param: '2'})
+            resp = requests.get(full_url, headers=HEADERS, timeout=TIMEOUT)
+            if resp.status_code < 400:
+                print(f"{Fore.GREEN}{full_url}")
+                return full_url
+        except:
+            return None
+
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        futures = [executor.submit(test_param, param) for param in param_list]
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                valid_urls.append(result)
+
+    if valid_urls:
+        with open(OUTPUT_PARAM_FILE, 'w') as f:
+            for url in valid_urls:
+                f.write(url + '\n')
 
 def self_update():
-    print("🛠️ Updating main script from remote source...")
+    print(f"{Fore.CYAN}Updating script from GitHub...")
     try:
-        resp = requests.get(SCRIPT_URL, timeout=10)
-        resp.raise_for_status()
-        script_code = resp.text
-
-        # Backup current script before overwrite
-        backup_path = SCRIPT_LOCAL + ".backup"
-        with open(SCRIPT_LOCAL, 'r', encoding='utf-8') as f:
-            current_code = f.read()
-        with open(backup_path, 'w', encoding='utf-8') as f:
-            f.write(current_code)
-        print(f"📦 Backup of current script saved as {backup_path}")
-
-        # Write new script code
-        with open(SCRIPT_LOCAL, 'w', encoding='utf-8') as f:
-            f.write(script_code)
-
-        print("✅ Script updated successfully! Please re-run the script.")
+        r = requests.get(SCRIPT_URL)
+        if r.status_code == 200:
+            with open(SCRIPT_LOCAL, 'w') as f:
+                f.write(r.text)
+            print(f"{Fore.GREEN}Update successful. Please rerun the script.")
+        else:
+            print(f"{Fore.RED}Failed to update script.")
     except Exception as e:
-        print(f"❌ Update failed: {e}")
+        print(f"{Fore.RED}Error: {e}")
+
+def main_menu():
+    options = [
+        ("1. Subdomain Discover", Fore.CYAN),
+        ("2. Parameter Finder", Fore.YELLOW),
+        ("3. Update Tool", Fore.GREEN),
+        ("0. Exit", Fore.RED)
+    ]
+    while True:
+        print(f"\n{Style.BRIGHT + Fore.MAGENTA}Select a Tool:{Style.RESET_ALL}")
+        for text, color in options:
+            print(color + text + Style.RESET_ALL)
+        choice = input(f"{Style.BRIGHT + Fore.CYAN}Enter choice: {Style.RESET_ALL}").strip()
+
+        if choice == '1':
+            asyncio.run(run_subdomain_scan())
+        elif choice == '2':
+            run_param_finder()
+        elif choice == '3':
+            self_update()
+        elif choice == '0':
+            sys.exit()
+        else:
+            print(f"{Fore.RED}Invalid option.")
 
 if __name__ == "__main__":
     print_banner()
-
-    if len(sys.argv) == 2 and sys.argv[1].lower() == "update":
-        self_update()
-        sys.exit(0)
-
-    if len(sys.argv) != 2:
-        print(f"{Fore.YELLOW}Usage: python3 {sys.argv[0]} domains.txt")
-        print(f"{Fore.YELLOW}Or to update: python3 {sys.argv[0]} update")
-        sys.exit(1)
-
-    domains_file = sys.argv[1]
-    asyncio.run(run(domains_file))
+    main_menu()
