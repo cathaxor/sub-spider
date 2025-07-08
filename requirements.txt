@@ -1,0 +1,5 @@
+aiohttp
+aiodns
+colorama
+bs4
+requests
