@@ -21,8 +21,8 @@ Created by: **Abdulla Rahaman**
 ---
 ## 🛠️ INSTALL
 ```bash
-git clone https://github.com/cathaxor/param-finder.git
-cd param-finder
+git clone https://github.com/cathaxor/sub-spider.git
+cd sub-spider
 ```
 ## 🛠️ Requirements
 
