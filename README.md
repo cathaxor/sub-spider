@@ -19,7 +19,7 @@ Created by: **Abdulla Rahaman**
 * Clean CLI menu with color support
 
 ---
-
+## 🛠️ INSTALL
 ```bash
 git clone https://github.com/cathaxor/param-finder.git
 cd param-finder
