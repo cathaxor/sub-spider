@@ -1,12 +1,12 @@
-# CatHaxor SubSpider
+# SubSpider
 
-**CatHaxor SubSpider** is an all-in-one fast and efficient tool to:
+**SubSpider** is an all-in-one fast and efficient tool to:
 
 * 🔍 Discover live subdomains
 * 📎 Detect URL parameters (for testing fuzzing/bypass)
 * 🔄 Self-update from GitHub
 
-Created by: **Cathaxor**
+Created by: **Abdulla Rahaman**
 
 ---
 
