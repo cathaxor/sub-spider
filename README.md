@@ -20,6 +20,10 @@ Created by: **Abdulla Rahaman**
 
 ---
 
+```bash
+git clone https://github.com/cathaxor/param-finder.git
+cd param-finder
+```
 ## 🛠️ Requirements
 
 ```bash
