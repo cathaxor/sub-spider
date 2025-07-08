@@ -28,7 +28,7 @@ found_subdomains = []
 SEC_LISTS_URL = "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt"
 
 # *** UPDATE SETTINGS ***
-SCRIPT_URL = "https://raw.githubusercontent.com/your-username/your-repo/main/script.py"  # <-- Replace with your raw script URL
+SCRIPT_URL = "https://raw.githubusercontent.com/cathaxor/sub-spider/main/sub-spider.py"
 SCRIPT_LOCAL = os.path.abspath(__file__)  # Current script path
 
 def print_banner():
